@@ -3,6 +3,8 @@ package steps
 import (
 	"context"
 	"fmt"
+	"github.com/equinor/radix-operator/pkg/apis/defaults"
+	corev1 "k8s.io/api/core/v1"
 
 	"github.com/equinor/radix-operator/pipeline-runner/model"
 	jobUtil "github.com/equinor/radix-operator/pkg/apis/job"
@@ -60,10 +62,13 @@ func (cli *BuildStepImplementation) Run(pipelineInfo *model.PipelineInfo) error 
 	log.Infof("Building app %s for branch %s and commit %s", cli.GetAppName(), branch, commitID)
 
 	namespace := utils.GetAppNamespace(cli.GetAppName())
-	buildSecrets, err := getBuildSecretsAsVariables(cli.GetKubeclient(), pipelineInfo.RadixApplication, namespace)
+
+	userDefinedBuildSecrets, err := getBuildSecretsAsVariables(cli.GetKubeclient(), pipelineInfo.RadixApplication, namespace)
 	if err != nil {
 		return err
 	}
+
+	buildSecrets := appendDefaultBuildSecrets(userDefinedBuildSecrets, pipelineInfo)
 
 	job, err := createACRBuildJob(cli.GetRegistration(), pipelineInfo, buildSecrets)
 	if err != nil {
@@ -87,6 +92,17 @@ func (cli *BuildStepImplementation) Run(pipelineInfo *model.PipelineInfo) error 
 	}
 
 	return cli.GetKubeutil().WaitForCompletionOf(job)
+}
+
+func appendDefaultBuildSecrets(userDefinedBuildSecrets []corev1.EnvVar, pipelineInfo *model.PipelineInfo) []corev1.EnvVar {
+	// If commitId is not empty, append it
+	commitId := pipelineInfo.PipelineArguments.CommitID
+	commitIdSecretName := defaults.BuildSecretPrefix + defaults.RadixCommitHashEnvironmentVariable
+	commitIdEnvVar := utils.GetEnvVarFromString(commitIdSecretName, commitId)
+	if commitId != "" {
+		userDefinedBuildSecrets = append(userDefinedBuildSecrets, commitIdEnvVar)
+	}
+	return userDefinedBuildSecrets
 }
 
 func noBuildComponents(ra *v1.RadixApplication) bool {
