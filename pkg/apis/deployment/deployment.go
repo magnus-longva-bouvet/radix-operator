@@ -602,6 +602,11 @@ func (deploy *Deployment) syncDeploymentForRadixComponent(component v1.RadixComm
 		}
 	}
 
+	//err := createOrUpdateCnameCrds(component)
+	//if err != nil {
+	//	return fmt.Errorf("failed to update external-dns CRDs %w", err)
+	//}
+
 	if component.GetMonitoring() {
 		err = deploy.createOrUpdateServiceMonitor(component)
 		if err != nil {

@@ -704,6 +704,8 @@ func TestObjectSynced_MultiComponent_NonActiveCluster_ContainsOnlyClusterSpecifi
 	assert.Equal(t, 4, len(ingresses.Items), "Only cluster specific ingresses for the two public components should appear")
 	assert.Truef(t, ingressByNameExists("app", ingresses), "Cluster specific ingress for public component should exist")
 	assert.Truef(t, ingressByNameExists("radixquote", ingresses), "Cluster specific ingress for public component should exist")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-app", RadixCnameIngressPrefix), ingresses), "Cluster specific cname ingress for public component should exist")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-radixquote", RadixCnameIngressPrefix), ingresses), "Cluster specific cname ingress for public component should exist")
 
 	appIngress := getIngressByName("app", ingresses)
 	assert.Equal(t, int32(8080), appIngress.Spec.Rules[0].IngressRuleValue.HTTP.Paths[0].Backend.Service.Port.Number, "Port was unexpected")
@@ -1138,7 +1140,7 @@ func TestObjectSynced_MultiComponentWithSameName_ContainsOneComponent(t *testing
 	assert.Equal(t, 1, len(expectedServices), "Number of services wasn't as expected")
 
 	ingresses, _ := client.NetworkingV1().Ingresses(envNamespace).List(context.TODO(), metav1.ListOptions{})
-	assert.Equal(t, 1, len(ingresses.Items), "Number of ingresses was not according to public components")
+	assert.Equal(t, 2, len(ingresses.Items), "Number of ingresses was not according to public components")
 }
 
 func TestConfigMap_IsGarbageCollected(t *testing.T) {
@@ -1530,10 +1532,13 @@ func TestObjectUpdated_WithAppAliasRemoved_AliasIngressIsCorrectlyReconciled(t *
 
 	// Test
 	ingresses, _ := client.NetworkingV1().Ingresses(utils.GetEnvironmentNamespace("any-app", "dev")).List(context.TODO(), metav1.ListOptions{})
-	assert.Equal(t, 3, len(ingresses.Items), "Environment should have three ingresses")
+	assert.Equal(t, 6, len(ingresses.Items), "Environment should have six ingresses")
 	assert.Truef(t, ingressByNameExists("any-app-url-alias", ingresses), "App should have had an app alias ingress")
 	assert.Truef(t, ingressByNameExists("frontend", ingresses), "Cluster specific ingress for public component should exist")
 	assert.Truef(t, ingressByNameExists("frontend-active-cluster-url-alias", ingresses), "App should have another external alias")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-any-app-url-alias", RadixCnameIngressPrefix), ingresses), "App should have had an cname app alias ingress")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-frontend", RadixCnameIngressPrefix), ingresses), "Cluster specific cname ingress for public component should exist")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-frontend-active-cluster-url-alias", RadixCnameIngressPrefix), ingresses), "Active cluster cname ingress for public component should exist")
 
 	// Remove app alias from dev
 	applyDeploymentWithSync(tu, client, kubeUtil, radixclient, prometheusclient, utils.ARadixDeployment().
@@ -1547,9 +1552,12 @@ func TestObjectUpdated_WithAppAliasRemoved_AliasIngressIsCorrectlyReconciled(t *
 				WithDNSAppAlias(false)))
 
 	ingresses, _ = client.NetworkingV1().Ingresses(utils.GetEnvironmentNamespace("any-app", "dev")).List(context.TODO(), metav1.ListOptions{})
-	assert.Equal(t, 2, len(ingresses.Items), "Alias ingress should have been removed")
+	assert.Equal(t, 4, len(ingresses.Items), "Alias ingress should have been removed")
 	assert.Truef(t, ingressByNameExists("frontend", ingresses), "Cluster specific ingress for public component should exist")
 	assert.Truef(t, ingressByNameExists("frontend-active-cluster-url-alias", ingresses), "App should have another external alias")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-frontend", RadixCnameIngressPrefix), ingresses), "Cluster specific cname ingress for public component should exist")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-frontend-active-cluster-url-alias", RadixCnameIngressPrefix), ingresses), "Active cluster cname ingress for public component should exist")
+
 }
 
 func TestObjectSynced_MultiComponentToOneComponent_HandlesChange(t *testing.T) {
@@ -1671,7 +1679,7 @@ func TestObjectSynced_PublicToNonPublic_HandlesChange(t *testing.T) {
 	assert.NoError(t, err)
 	envNamespace := utils.GetEnvironmentNamespace(anyAppName, anyEnvironmentName)
 	ingresses, _ := client.NetworkingV1().Ingresses(envNamespace).List(context.TODO(), metav1.ListOptions{})
-	assert.Equal(t, 2, len(ingresses.Items), "Both components should be public")
+	assert.Equal(t, 4, len(ingresses.Items), "Both components should be public")
 
 	// Remove public on component 2
 	_, err = applyDeploymentWithSync(tu, client, kubeUtil, radixclient, prometheusclient, utils.ARadixDeployment().
@@ -1689,7 +1697,7 @@ func TestObjectSynced_PublicToNonPublic_HandlesChange(t *testing.T) {
 
 	assert.NoError(t, err)
 	ingresses, _ = client.NetworkingV1().Ingresses(envNamespace).List(context.TODO(), metav1.ListOptions{})
-	assert.Equal(t, 1, len(ingresses.Items), "Only component 1 should be public")
+	assert.Equal(t, 2, len(ingresses.Items), "Only component 1 should be public")
 
 	// Remove public on component 1
 	_, err = applyDeploymentWithSync(tu, client, kubeUtil, radixclient, prometheusclient, utils.ARadixDeployment().
@@ -1892,7 +1900,7 @@ func TestObjectSynced_PublicPort_OldPublic(t *testing.T) {
 	assert.NoError(t, err)
 	envNamespace := utils.GetEnvironmentNamespace(anyAppName, anyEnvironmentName)
 	ingresses, _ := client.NetworkingV1().Ingresses(envNamespace).List(context.TODO(), metav1.ListOptions{})
-	assert.Equal(t, 1, len(ingresses.Items), "Component should be public")
+	assert.Equal(t, 2, len(ingresses.Items), "Component should be public")
 	assert.Equal(t, int32(80), ingresses.Items[0].Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port.Number)
 
 	// New publicPort exists, old public exists (ignored)
@@ -1909,7 +1917,7 @@ func TestObjectSynced_PublicPort_OldPublic(t *testing.T) {
 
 	assert.NoError(t, err)
 	ingresses, _ = client.NetworkingV1().Ingresses(envNamespace).List(context.TODO(), metav1.ListOptions{})
-	assert.Equal(t, 1, len(ingresses.Items), "Component should be public")
+	assert.Equal(t, 2, len(ingresses.Items), "Component should be public")
 	assert.Equal(t, int32(80), ingresses.Items[0].Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port.Number)
 
 	// New publicPort does not exist, old public does not exist
@@ -1943,7 +1951,7 @@ func TestObjectSynced_PublicPort_OldPublic(t *testing.T) {
 	assert.NoError(t, err)
 	ingresses, _ = client.NetworkingV1().Ingresses(envNamespace).List(context.TODO(), metav1.ListOptions{})
 	expectedIngresses := getIngressesForRadixComponents(&ingresses.Items)
-	assert.Equal(t, 1, len(expectedIngresses), "Component should be public")
+	assert.Equal(t, 2, len(expectedIngresses), "Component should be public")
 	actualPortValue := ingresses.Items[0].Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port.Number
 	assert.Equal(t, int32(443), actualPortValue)
 }
@@ -1985,10 +1993,12 @@ func TestObjectUpdated_WithAllExternalAliasRemoved_ExternalAliasIngressIsCorrect
 	roles, _ := client.RbacV1().Roles(envNamespace).List(context.TODO(), metav1.ListOptions{})
 	rolebindings, _ := client.RbacV1().RoleBindings(envNamespace).List(context.TODO(), metav1.ListOptions{})
 
-	assert.Equal(t, 3, len(ingresses.Items), "Environment should have three ingresses")
+	assert.Equal(t, 5, len(ingresses.Items), "Environment should have three ingresses")
 	assert.Truef(t, ingressByNameExists("some.alias.com", ingresses), "App should have had an external alias ingress")
 	assert.Truef(t, ingressByNameExists("frontend-active-cluster-url-alias", ingresses), "App should have active cluster alias")
 	assert.Truef(t, ingressByNameExists("frontend", ingresses), "App should have cluster specific alias")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-frontend-active-cluster-url-alias", RadixCnameIngressPrefix), ingresses), "Active cluster cname ingress for public component should exist")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-frontend", RadixCnameIngressPrefix), ingresses), "Cluster specific cname ingress for public component should exist")
 
 	assert.Equal(t, 1, len(roles.Items), "Environment should have one role for TLS cert")
 	assert.True(t, roleByNameExists("radix-app-adm-frontend", roles), "Expected role radix-app-adm-frontend to be there to access secrets for TLS certificates")
@@ -2014,9 +2024,11 @@ func TestObjectUpdated_WithAllExternalAliasRemoved_ExternalAliasIngressIsCorrect
 	secrets, _ = client.CoreV1().Secrets(envNamespace).List(context.TODO(), metav1.ListOptions{})
 	rolebindings, _ = client.RbacV1().RoleBindings(envNamespace).List(context.TODO(), metav1.ListOptions{})
 
-	assert.Equal(t, 2, len(ingresses.Items), "External alias ingress should have been removed")
+	assert.Equal(t, 4, len(ingresses.Items), "External alias ingress should have been removed")
 	assert.Truef(t, ingressByNameExists("frontend-active-cluster-url-alias", ingresses), "App should have active cluster alias")
 	assert.Truef(t, ingressByNameExists("frontend", ingresses), "App should have cluster specific alias")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-frontend-active-cluster-url-alias", RadixCnameIngressPrefix), ingresses), "Active cluster cname ingress for public component should exist")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-frontend", RadixCnameIngressPrefix), ingresses), "Cluster specific cname ingress for public component should exist")
 
 	assert.Equal(t, 0, len(rolebindings.Items), "Role should have been removed")
 	assert.Equal(t, 0, len(rolebindings.Items), "Rolebinding should have been removed")
@@ -2049,11 +2061,13 @@ func TestObjectUpdated_WithOneExternalAliasRemovedOrModified_AllChangesPropelyRe
 
 	// Test
 	ingresses, _ := client.NetworkingV1().Ingresses(envNamespace).List(context.TODO(), metav1.ListOptions{})
-	assert.Equal(t, 4, len(ingresses.Items), "Environment should have four ingresses")
+	assert.Equal(t, 6, len(ingresses.Items), "Environment should have six ingresses")
 	assert.Truef(t, ingressByNameExists("some.alias.com", ingresses), "App should have had an external alias ingress")
 	assert.Truef(t, ingressByNameExists("another.alias.com", ingresses), "App should have had another external alias ingress")
 	assert.Truef(t, ingressByNameExists("frontend-active-cluster-url-alias", ingresses), "App should have active cluster alias")
 	assert.Truef(t, ingressByNameExists("frontend", ingresses), "App should have cluster specific alias")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-frontend-active-cluster-url-alias", RadixCnameIngressPrefix), ingresses), "Active cluster cname ingress for public component should exist")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-frontend", RadixCnameIngressPrefix), ingresses), "Cluster specific cname ingress for public component should exist")
 
 	externalAliasIngress := getIngressByName("some.alias.com", ingresses)
 	assert.Equal(t, "some.alias.com", externalAliasIngress.Spec.Rules[0].Host, "App should have an external alias")
@@ -2082,11 +2096,13 @@ func TestObjectUpdated_WithOneExternalAliasRemovedOrModified_AllChangesPropelyRe
 				WithSecrets([]string{"a_secret"})))
 
 	ingresses, _ = client.NetworkingV1().Ingresses(envNamespace).List(context.TODO(), metav1.ListOptions{})
-	assert.Equal(t, 4, len(ingresses.Items), "Environment should have four ingresses")
+	assert.Equal(t, 6, len(ingresses.Items), "Environment should have six ingresses")
 	assert.Truef(t, ingressByNameExists("some.alias.com", ingresses), "App should have had an external alias ingress")
 	assert.Truef(t, ingressByNameExists("yet.another.alias.com", ingresses), "App should have had another external alias ingress")
 	assert.Truef(t, ingressByNameExists("frontend-active-cluster-url-alias", ingresses), "App should have active cluster alias")
 	assert.Truef(t, ingressByNameExists("frontend", ingresses), "App should have cluster specific alias")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-frontend-active-cluster-url-alias", RadixCnameIngressPrefix), ingresses), "Active cluster cname ingress for public component should exist")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-frontend", RadixCnameIngressPrefix), ingresses), "Cluster specific cname ingress for public component should exist")
 
 	externalAliasIngress = getIngressByName("some.alias.com", ingresses)
 	assert.Equal(t, "some.alias.com", externalAliasIngress.Spec.Rules[0].Host, "App should have an external alias")
@@ -2113,10 +2129,12 @@ func TestObjectUpdated_WithOneExternalAliasRemovedOrModified_AllChangesPropelyRe
 				WithSecrets([]string{"a_secret"})))
 
 	ingresses, _ = client.NetworkingV1().Ingresses(envNamespace).List(context.TODO(), metav1.ListOptions{})
-	assert.Equal(t, 3, len(ingresses.Items), "Environment should have three ingresses")
+	assert.Equal(t, 5, len(ingresses.Items), "Environment should have five ingresses")
 	assert.Truef(t, ingressByNameExists("yet.another.alias.com", ingresses), "App should have had another external alias ingress")
 	assert.Truef(t, ingressByNameExists("frontend-active-cluster-url-alias", ingresses), "App should have active cluster alias")
 	assert.Truef(t, ingressByNameExists("frontend", ingresses), "App should have cluster specific alias")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-frontend-active-cluster-url-alias", RadixCnameIngressPrefix), ingresses), "Active cluster cname ingress for public component should exist")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-frontend", RadixCnameIngressPrefix), ingresses), "Cluster specific cname ingress for public component should exist")
 
 	yetAnotherExternalAliasIngress = getIngressByName("yet.another.alias.com", ingresses)
 	assert.Equal(t, "yet.another.alias.com", yetAnotherExternalAliasIngress.Spec.Rules[0].Host, "App should have an external alias")
@@ -2137,9 +2155,11 @@ func TestObjectUpdated_WithOneExternalAliasRemovedOrModified_AllChangesPropelyRe
 				WithPublicPort("http")))
 
 	ingresses, _ = client.NetworkingV1().Ingresses(envNamespace).List(context.TODO(), metav1.ListOptions{})
-	assert.Equal(t, 2, len(ingresses.Items), "External alias ingress should have been removed")
+	assert.Equal(t, 4, len(ingresses.Items), "External alias ingress should have been removed")
 	assert.Truef(t, ingressByNameExists("frontend-active-cluster-url-alias", ingresses), "App should have active cluster alias")
 	assert.Truef(t, ingressByNameExists("frontend", ingresses), "App should have cluster specific alias")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-frontend-active-cluster-url-alias", RadixCnameIngressPrefix), ingresses), "Active cluster cname ingress for public component should exist")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-frontend", RadixCnameIngressPrefix), ingresses), "Cluster specific cname ingress for public component should exist")
 
 	roles, _ = client.RbacV1().Roles(envNamespace).List(context.TODO(), metav1.ListOptions{})
 	assert.Equal(t, 0, len(roles.Items), "Role should have been removed")
@@ -2168,7 +2188,7 @@ func TestFixedAliasIngress_ActiveCluster(t *testing.T) {
 	applyDeploymentWithSync(tu, client, kubeUtil, radixclient, prometheusclient, radixDeployBuilder)
 
 	ingresses, _ := client.NetworkingV1().Ingresses(envNamespace).List(context.TODO(), metav1.ListOptions{})
-	assert.Equal(t, 2, len(ingresses.Items), "Environment should have two ingresses")
+	assert.Equal(t, 4, len(ingresses.Items), "Environment should have four ingresses")
 	activeClusterIngress := getIngressByName(getActiveClusterIngressName(anyComponentName), ingresses)
 	assert.False(t, strings.Contains(activeClusterIngress.Spec.Rules[0].Host, clusterName))
 	defaultIngress := getIngressByName(getDefaultIngressName(anyComponentName), ingresses)
@@ -2178,7 +2198,7 @@ func TestFixedAliasIngress_ActiveCluster(t *testing.T) {
 	os.Setenv(defaults.ActiveClusternameEnvironmentVariable, "newClusterName")
 	applyDeploymentWithSync(tu, client, kubeUtil, radixclient, prometheusclient, radixDeployBuilder)
 	ingresses, _ = client.NetworkingV1().Ingresses(envNamespace).List(context.TODO(), metav1.ListOptions{})
-	assert.Equal(t, 1, len(ingresses.Items), "Environment should have one ingresses")
+	assert.Equal(t, 2, len(ingresses.Items), "Environment should have two ingresses")
 	assert.True(t, strings.Contains(ingresses.Items[0].Spec.Rules[0].Host, clusterName))
 }
 
@@ -3445,9 +3465,9 @@ func Test_IngressAnnotations_Called(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	annotations1 := NewMockIngressAnnotationProvider(ctrl)
-	annotations1.EXPECT().GetAnnotations(&rd.Spec.Components[0]).Times(3).Return(map[string]string{"foo": "x"}, nil)
+	annotations1.EXPECT().GetAnnotations(&rd.Spec.Components[0]).Times(6).Return(map[string]string{"foo": "x"}, nil)
 	annotations2 := NewMockIngressAnnotationProvider(ctrl)
-	annotations2.EXPECT().GetAnnotations(&rd.Spec.Components[0]).Times(3).Return(map[string]string{"bar": "y", "baz": "z"}, nil)
+	annotations2.EXPECT().GetAnnotations(&rd.Spec.Components[0]).Times(6).Return(map[string]string{"bar": "y", "baz": "z"}, nil)
 
 	syncer := Deployment{
 		kubeclient:                 kubeclient,
@@ -3462,7 +3482,7 @@ func Test_IngressAnnotations_Called(t *testing.T) {
 	err := syncer.OnSync()
 	assert.Nil(t, err)
 	ingresses, _ := kubeclient.NetworkingV1().Ingresses("").List(context.Background(), metav1.ListOptions{})
-	assert.Len(t, ingresses.Items, 3)
+	assert.Len(t, ingresses.Items, 6)
 	expected := map[string]string{"bar": "y", "baz": "z", "foo": "x"}
 
 	for _, ingress := range ingresses.Items {
@@ -3480,7 +3500,7 @@ func Test_IngressAnnotations_ReturnError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	annotations1 := NewMockIngressAnnotationProvider(ctrl)
-	annotations1.EXPECT().GetAnnotations(&rd.Spec.Components[0]).Times(1).Return(nil, errors.New("any error"))
+	annotations1.EXPECT().GetAnnotations(&rd.Spec.Components[0]).Times(2).Return(nil, errors.New("any error"))
 
 	syncer := Deployment{
 		kubeclient:                 kubeclient,
