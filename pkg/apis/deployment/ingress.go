@@ -28,7 +28,8 @@ type AnnotationConfiguration struct {
 }
 
 const (
-	TLSSecretName = "radix-wildcard-tls-cert"
+	TLSSecretName           = "radix-wildcard-tls-cert"
+	RadixCnameIngressPrefix = "radixcname"
 )
 
 func (deploy *Deployment) createOrUpdateIngress(deployComponent radixv1.RadixCommonDeployComponent) error {
@@ -52,15 +53,17 @@ func (deploy *Deployment) createOrUpdateIngress(deployComponent radixv1.RadixCom
 
 	// Only the active cluster should have the DNS alias, not to cause conflicts between clusters
 	if deployComponent.IsDNSAppAlias() && isActiveCluster(clustername) {
-		appAliasIngress, err := deploy.getAppAliasIngressConfig(deploy.radixDeployment.Spec.AppName, ownerReference, deployComponent, namespace, publicPortNumber)
+		appAliasIngresses, err := deploy.getAppAliasIngressConfigs(deploy.radixDeployment.Spec.AppName, ownerReference, deployComponent, namespace, publicPortNumber)
 		if err != nil {
 			return err
 		}
 
-		if appAliasIngress != nil {
-			err = deploy.kubeutil.ApplyIngress(namespace, appAliasIngress)
-			if err != nil {
-				return err
+		for _, appAliasIngress := range appAliasIngresses {
+			if appAliasIngress != nil {
+				err = deploy.kubeutil.ApplyIngress(namespace, appAliasIngress)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	} else {
@@ -99,15 +102,16 @@ func (deploy *Deployment) createOrUpdateIngress(deployComponent radixv1.RadixCom
 
 	if isActiveCluster(clustername) {
 		// Create fixed active cluster ingress for this component
-		activeClusterAliasIngress, err := deploy.getActiveClusterAliasIngressConfig(deploy.radixDeployment.Spec.AppName, ownerReference, deployComponent, namespace, publicPortNumber)
+		activeClusterAliasIngresses, err := deploy.getActiveClusterAliasIngressConfigs(deploy.radixDeployment.Spec.AppName, ownerReference, deployComponent, namespace, publicPortNumber)
 		if err != nil {
 			return err
 		}
-
-		if activeClusterAliasIngress != nil {
-			err = deploy.kubeutil.ApplyIngress(namespace, activeClusterAliasIngress)
-			if err != nil {
-				return err
+		for _, activeClusterAliasIngress := range activeClusterAliasIngresses {
+			if activeClusterAliasIngress != nil {
+				err = deploy.kubeutil.ApplyIngress(namespace, activeClusterAliasIngress)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	} else {
@@ -118,12 +122,14 @@ func (deploy *Deployment) createOrUpdateIngress(deployComponent radixv1.RadixCom
 		}
 	}
 
-	ingress, err := deploy.getDefaultIngressConfig(deploy.radixDeployment.Spec.AppName, ownerReference, deployComponent, clustername, namespace, publicPortNumber)
-	if err != nil {
-		return err
+	ingresses, err := deploy.getDefaultIngressConfigs(deploy.radixDeployment.Spec.AppName, ownerReference, deployComponent, clustername, namespace, publicPortNumber)
+	for _, ingress := range ingresses {
+		err = deploy.kubeutil.ApplyIngress(namespace, ingress)
+		if err != nil {
+			return err
+		}
 	}
-
-	return deploy.kubeutil.ApplyIngress(namespace, ingress)
+	return nil
 }
 
 func isActiveCluster(clustername string) bool {
@@ -223,58 +229,116 @@ func (deploy *Deployment) garbageCollectIngressForComponentAndExternalAlias(comp
 	return nil
 }
 
-func (deploy *Deployment) getAppAliasIngressConfig(appName string, ownerReference []metav1.OwnerReference, component radixv1.RadixCommonDeployComponent, namespace string, publicPortNumber int32) (*networkingv1.Ingress, error) {
+func (deploy *Deployment) getAppAliasIngressConfigs(appName string, ownerReference []metav1.OwnerReference, component radixv1.RadixCommonDeployComponent, namespace string, publicPortNumber int32) ([]*networkingv1.Ingress, error) {
+	var ingresses []*networkingv1.Ingress
 	appAlias := os.Getenv(defaults.OperatorAppAliasBaseURLEnvironmentVariable) // .app.dev.radix.equinor.com in launch.json
 	if appAlias == "" {
 		return nil, nil
 	}
-
 	hostname := fmt.Sprintf("%s.%s", appName, appAlias)
+	ingressName := getAppAliasIngressName(appName)
+	ingress, err := deploy.getAppAliasIngressConfig(appName, hostname, ingressName, ownerReference, component, publicPortNumber, true)
+	if err != nil {
+		return nil, err
+	}
+	ingresses = append(ingresses, ingress)
+
+	cnameHostname := fmt.Sprintf("%s-%s", RadixCnameIngressPrefix, hostname)
+	cnameIngressName := fmt.Sprintf("%s-%s", RadixCnameIngressPrefix, ingressName)
+	cnameIngress, err := deploy.getAppAliasIngressConfig(appName, cnameHostname, cnameIngressName, ownerReference, component, publicPortNumber, false)
+	if err != nil {
+		return nil, err
+	}
+	ingresses = append(ingresses, cnameIngress)
+	return ingresses, nil
+}
+
+func (deploy *Deployment) getAppAliasIngressConfig(appName, hostname, ingressName string, ownerReference []metav1.OwnerReference, component radixv1.RadixCommonDeployComponent, publicPortNumber int32, isExternalDnsSource bool) (*networkingv1.Ingress, error) {
+
 	ingressSpec := getIngressSpec(hostname, component.GetName(), TLSSecretName, publicPortNumber)
 
-	return deploy.getIngressConfig(appName, component, getAppAliasIngressName(appName), ownerReference, true, false, false, ingressSpec, true)
+	return deploy.getIngressConfig(appName, component, ingressName, ownerReference, true, false, false, ingressSpec, isExternalDnsSource)
 }
 
 func getAppAliasIngressName(appName string) string {
 	return fmt.Sprintf("%s-url-alias", appName)
 }
 
-func (deploy *Deployment) getActiveClusterAliasIngressConfig(
-	appName string,
-	ownerReference []metav1.OwnerReference,
-	component radixv1.RadixCommonDeployComponent,
-	namespace string,
-	publicPortNumber int32,
-) (*networkingv1.Ingress, error) {
+func (deploy *Deployment) getActiveClusterAliasIngressConfigs(appName string, ownerReference []metav1.OwnerReference, component radixv1.RadixCommonDeployComponent, namespace string, publicPortNumber int32) ([]*networkingv1.Ingress, error) {
+	var ingresses []*networkingv1.Ingress
 	hostname := getActiveClusterHostName(component.GetName(), namespace)
 	if hostname == "" {
 		return nil, nil
 	}
-	ingressSpec := getIngressSpec(hostname, component.GetName(), TLSSecretName, publicPortNumber)
 	ingressName := getActiveClusterIngressName(component.GetName())
+	ingress, err := deploy.getActiveClusterAliasIngressConfig(appName, hostname, ingressName, ownerReference, component, publicPortNumber, true)
+	if err != nil {
+		return nil, err
+	}
+	ingresses = append(ingresses, ingress)
 
-	return deploy.getIngressConfig(appName, component, ingressName, ownerReference, false, false, true, ingressSpec, true)
+	cnameHostname := fmt.Sprintf("%s-%s", RadixCnameIngressPrefix, hostname)
+	cnameIngressName := fmt.Sprintf("%s-%s", RadixCnameIngressPrefix, ingressName)
+	cnameIngress, err := deploy.getActiveClusterAliasIngressConfig(appName, cnameHostname, cnameIngressName, ownerReference, component, publicPortNumber, false)
+	if err != nil {
+		return nil, err
+	}
+	ingresses = append(ingresses, cnameIngress)
+	return ingresses, nil
+}
+
+func (deploy *Deployment) getActiveClusterAliasIngressConfig(
+	appName,
+	hostname,
+	ingressName string,
+	ownerReference []metav1.OwnerReference,
+	component radixv1.RadixCommonDeployComponent,
+	publicPortNumber int32,
+	isExternalDnsSource bool,
+) (*networkingv1.Ingress, error) {
+	ingressSpec := getIngressSpec(hostname, component.GetName(), TLSSecretName, publicPortNumber)
+	return deploy.getIngressConfig(appName, component, ingressName, ownerReference, false, false, true, ingressSpec, isExternalDnsSource)
 }
 
 func getActiveClusterIngressName(componentName string) string {
 	return fmt.Sprintf("%s-active-cluster-url-alias", componentName)
 }
 
-func (deploy *Deployment) getDefaultIngressConfig(
-	appName string,
-	ownerReference []metav1.OwnerReference,
-	component radixv1.RadixCommonDeployComponent,
-	clustername, namespace string,
-	publicPortNumber int32,
-) (*networkingv1.Ingress, error) {
+func (deploy *Deployment) getDefaultIngressConfigs(appName string, ownerReference []metav1.OwnerReference, component radixv1.RadixCommonDeployComponent, clustername string, namespace string, publicPortNumber int32) ([]*networkingv1.Ingress, error) {
+	var ingresses []*networkingv1.Ingress
 	dnsZone := os.Getenv(defaults.OperatorDNSZoneEnvironmentVariable)
 	if dnsZone == "" {
 		return nil, nil
 	}
 	hostname := getHostName(component.GetName(), namespace, clustername, dnsZone)
+	ingressName := getDefaultIngressName(component.GetName())
+	ingress, err := deploy.getDefaultIngressConfig(appName, hostname, ingressName, ownerReference, component, publicPortNumber, true)
+	if err != nil {
+		return nil, err
+	}
+	ingresses = append(ingresses, ingress)
+
+	cnameHostname := fmt.Sprintf("%s-%s", RadixCnameIngressPrefix, hostname)
+	cnameIngressName := fmt.Sprintf("%s-%s", RadixCnameIngressPrefix, ingressName)
+	cnameIngress, err := deploy.getDefaultIngressConfig(appName, cnameHostname, cnameIngressName, ownerReference, component, publicPortNumber, false)
+	if err != nil {
+		return nil, err
+	}
+	ingresses = append(ingresses, cnameIngress)
+	return ingresses, nil
+}
+
+func (deploy *Deployment) getDefaultIngressConfig(
+	appName, hostname, ingressName string,
+	ownerReference []metav1.OwnerReference,
+	component radixv1.RadixCommonDeployComponent,
+	publicPortNumber int32,
+	isExternalDnsSource bool,
+) (*networkingv1.Ingress, error) {
+
 	ingressSpec := getIngressSpec(hostname, component.GetName(), TLSSecretName, publicPortNumber)
 
-	return deploy.getIngressConfig(appName, component, getDefaultIngressName(component.GetName()), ownerReference, false, false, false, ingressSpec, true)
+	return deploy.getIngressConfig(appName, component, ingressName, ownerReference, false, false, false, ingressSpec, isExternalDnsSource)
 }
 
 func getDefaultIngressName(componentName string) string {
@@ -290,7 +354,7 @@ func (deploy *Deployment) getExternalAliasIngressConfig(
 	publicPortNumber int32,
 ) (*networkingv1.Ingress, error) {
 	ingressSpec := getIngressSpec(externalAlias, component.GetName(), externalAlias, publicPortNumber)
-	return deploy.getIngressConfig(appName, component, externalAlias, ownerReference, false, true, false, ingressSpec, true)
+	return deploy.getIngressConfig(appName, component, externalAlias, ownerReference, false, true, false, ingressSpec, false)
 }
 
 func getActiveClusterHostName(componentName, namespace string) string {

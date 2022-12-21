@@ -701,7 +701,7 @@ func TestObjectSynced_MultiComponent_NonActiveCluster_ContainsOnlyClusterSpecifi
 	envNamespace := utils.GetEnvironmentNamespace("edcradix", "test")
 
 	ingresses, _ := client.NetworkingV1().Ingresses(envNamespace).List(context.TODO(), metav1.ListOptions{})
-	assert.Equal(t, 2, len(ingresses.Items), "Only cluster specific ingresses for the two public components should appear")
+	assert.Equal(t, 4, len(ingresses.Items), "Only cluster specific ingresses for the two public components should appear")
 	assert.Truef(t, ingressByNameExists("app", ingresses), "Cluster specific ingress for public component should exist")
 	assert.Truef(t, ingressByNameExists("radixquote", ingresses), "Cluster specific ingress for public component should exist")
 
@@ -750,14 +750,19 @@ func TestObjectSynced_MultiComponent_ActiveCluster_ContainsAllAliasesAndSupporti
 	envNamespace := utils.GetEnvironmentNamespace("edcradix", "test")
 
 	ingresses, _ := client.NetworkingV1().Ingresses(envNamespace).List(context.TODO(), metav1.ListOptions{})
-	assert.Equal(t, 7, len(ingresses.Items), "Number of ingresses was not according to public components, app alias and number of external aliases")
+	assert.Equal(t, 12, len(ingresses.Items), "Number of ingresses was not according to public components, app alias and number of external aliases")
+	assert.Truef(t, ingressByNameExists("some.alias.com", ingresses), "App should have an external alias")
+	assert.Truef(t, ingressByNameExists("another.alias.com", ingresses), "App should have another external alias")
 	assert.Truef(t, ingressByNameExists("app", ingresses), "Cluster specific ingress for public component should exist")
 	assert.Truef(t, ingressByNameExists("radixquote", ingresses), "Cluster specific ingress for public component should exist")
 	assert.Truef(t, ingressByNameExists("edcradix-url-alias", ingresses), "Cluster specific ingress for public component should exist")
-	assert.Truef(t, ingressByNameExists("some.alias.com", ingresses), "App should have an external alias")
-	assert.Truef(t, ingressByNameExists("another.alias.com", ingresses), "App should have another external alias")
-	assert.Truef(t, ingressByNameExists("app-active-cluster-url-alias", ingresses), "App should have another external alias")
+	assert.Truef(t, ingressByNameExists("app-active-cluster-url-alias", ingresses), "App should have app alias")
 	assert.Truef(t, ingressByNameExists("radixquote-active-cluster-url-alias", ingresses), "Radixquote should have had an ingress")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-app", RadixCnameIngressPrefix), ingresses), "Cluster specific cname ingress for public component should exist")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-radixquote", RadixCnameIngressPrefix), ingresses), "Cluster specific cname ingress for public component should exist")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-edcradix-url-alias", RadixCnameIngressPrefix), ingresses), "Cluster specific cname ingress for public component should exist")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-app-active-cluster-url-alias", RadixCnameIngressPrefix), ingresses), "App should have cname app alias")
+	assert.Truef(t, ingressByNameExists(fmt.Sprintf("%s-radixquote-active-cluster-url-alias", RadixCnameIngressPrefix), ingresses), "Radixquote should have had a cname ingress")
 
 	appAlias := getIngressByName("edcradix-url-alias", ingresses)
 	assert.Equal(t, int32(8080), appAlias.Spec.Rules[0].IngressRuleValue.HTTP.Paths[0].Backend.Service.Port.Number, "Port was unexpected")
@@ -765,7 +770,11 @@ func TestObjectSynced_MultiComponent_ActiveCluster_ContainsAllAliasesAndSupporti
 	assert.Equal(t, "false", appAlias.Labels[kube.RadixExternalAliasLabel], "Ingress should not be an external app alias")
 	assert.Equal(t, "false", appAlias.Labels[kube.RadixActiveClusterAliasLabel], "Ingress should not be an active cluster alias")
 	assert.Equal(t, "app", appAlias.Labels[kube.RadixComponentLabel], "Ingress should have the corresponding component")
+	assert.Equal(t, strconv.FormatBool(true), appAlias.Labels[kube.RadixIsExternalDnsSource], "Ingress should be source for external-dns DNS record")
 	assert.Equal(t, "edcradix.app.dev.radix.equinor.com", appAlias.Spec.Rules[0].Host, "App should have an external alias")
+
+	cnameAppAlias := getIngressByName(fmt.Sprintf("%s-edcradix-url-alias", RadixCnameIngressPrefix), ingresses)
+	assert.Equal(t, strconv.FormatBool(false), cnameAppAlias.Labels[kube.RadixIsExternalDnsSource], "Ingress should not be source for external-dns DNS record")
 
 	externalAlias := getIngressByName("some.alias.com", ingresses)
 	assert.Equal(t, int32(8080), externalAlias.Spec.Rules[0].IngressRuleValue.HTTP.Paths[0].Backend.Service.Port.Number, "Port was unexpected")
@@ -773,6 +782,7 @@ func TestObjectSynced_MultiComponent_ActiveCluster_ContainsAllAliasesAndSupporti
 	assert.Equal(t, "true", externalAlias.Labels[kube.RadixExternalAliasLabel], "Ingress should not be an external app alias")
 	assert.Equal(t, "false", externalAlias.Labels[kube.RadixActiveClusterAliasLabel], "Ingress should not be an active cluster alias")
 	assert.Equal(t, "app", externalAlias.Labels[kube.RadixComponentLabel], "Ingress should have the corresponding component")
+	assert.Equal(t, strconv.FormatBool(false), externalAlias.Labels[kube.RadixIsExternalDnsSource], "Ingress should not be source for external-dns DNS record")
 	assert.Equal(t, "some.alias.com", externalAlias.Spec.Rules[0].Host, "App should have an external alias")
 
 	anotherExternalAlias := getIngressByName("another.alias.com", ingresses)
@@ -781,6 +791,7 @@ func TestObjectSynced_MultiComponent_ActiveCluster_ContainsAllAliasesAndSupporti
 	assert.Equal(t, "true", anotherExternalAlias.Labels[kube.RadixExternalAliasLabel], "Ingress should not be an external app alias")
 	assert.Equal(t, "false", anotherExternalAlias.Labels[kube.RadixActiveClusterAliasLabel], "Ingress should not be an active cluster alias")
 	assert.Equal(t, "app", anotherExternalAlias.Labels[kube.RadixComponentLabel], "Ingress should have the corresponding component")
+	assert.Equal(t, strconv.FormatBool(false), anotherExternalAlias.Labels[kube.RadixIsExternalDnsSource], "Ingress should not be source for external-dns DNS record")
 	assert.Equal(t, "another.alias.com", anotherExternalAlias.Spec.Rules[0].Host, "App should have an external alias")
 
 	appActiveClusterIngress := getIngressByName("app-active-cluster-url-alias", ingresses)
