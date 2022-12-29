@@ -75,38 +75,53 @@ func (cli *DeployStepImplementation) deploy(pipelineInfo *model.PipelineInfo) er
 	return nil
 }
 
-func (cli *DeployStepImplementation) deployToEnv(appName, env string, pipelineInfo *model.PipelineInfo) error {
+func (cli *DeployStepImplementation) deployToEnv(appName, envName string, pipelineInfo *model.PipelineInfo) error {
 	defaultEnvVars, err := getDefaultEnvVars(pipelineInfo)
 
 	if err != nil {
-		return fmt.Errorf("failed to retrieve default env vars for RadixDeployment in app  %s. %v", appName, err)
+		return fmt.Errorf("failed to retrieve default envName vars for RadixDeployment in app  %s. %v", appName, err)
+	}
+
+	env, err := getRadixEnvironmentByName(pipelineInfo.RadixApplication, envName)
+	if err != nil {
+		return err
 	}
 
 	radixDeployment, err := deployment.ConstructForTargetEnvironment(
 		pipelineInfo.RadixApplication,
+		env,
 		pipelineInfo.PipelineArguments.JobName,
 		pipelineInfo.PipelineArguments.ImageTag,
 		pipelineInfo.PipelineArguments.Branch,
 		pipelineInfo.ComponentImages,
-		env,
+		envName,
 		defaultEnvVars)
 
 	if err != nil {
 		return fmt.Errorf("failed to create radix deployments objects for app %s. %v", appName, err)
 	}
 
-	err = cli.namespaceWatcher.WaitFor(utils.GetEnvironmentNamespace(cli.GetAppName(), env))
+	err = cli.namespaceWatcher.WaitFor(utils.GetEnvironmentNamespace(cli.GetAppName(), envName))
 	if err != nil {
-		return fmt.Errorf("failed to get environment namespace, %s, for app %s. %v", env, appName, err)
+		return fmt.Errorf("failed to get environment namespace, %s, for app %s. %v", envName, appName, err)
 	}
 
-	log.Infof("Apply radix deployment %s on env %s", radixDeployment.GetName(), radixDeployment.GetNamespace())
+	log.Infof("Apply radix deployment %s on envName %s", radixDeployment.GetName(), radixDeployment.GetNamespace())
 	_, err = cli.GetRadixclient().RadixV1().RadixDeployments(radixDeployment.GetNamespace()).Create(context.TODO(), radixDeployment, metav1.CreateOptions{})
 	if err != nil {
-		return fmt.Errorf("failed to apply radix deployment for app %s to environment %s. %v", appName, env, err)
+		return fmt.Errorf("failed to apply radix deployment for app %s to environment %s. %v", appName, envName, err)
 	}
 
 	return nil
+}
+
+func getRadixEnvironmentByName(application *v1.RadixApplication, envName string) (*v1.Environment, error) {
+	for _, env := range application.Spec.Environments {
+		if env.Name == envName {
+			return &env, nil
+		}
+	}
+	return nil, fmt.Errorf("could not find environment %s in RadixApplication", envName)
 }
 
 func getDefaultEnvVars(pipelineInfo *model.PipelineInfo) (v1.EnvVarsMap, error) {

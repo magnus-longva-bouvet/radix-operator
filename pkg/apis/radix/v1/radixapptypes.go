@@ -69,8 +69,9 @@ type EgressRule struct {
 
 // EgressConfig defines an egress configuration for an environment
 type EgressConfig struct {
-	AllowRadix *bool        `json:"allowRadix,omitempty" yaml:"allowRadix,omitempty"`
-	Rules      []EgressRule `json:"rules,omitempty" yaml:"rules,omitempty"`
+	AllowRadix      *bool        `json:"allowRadix,omitempty" yaml:"allowRadix,omitempty"`
+	Rules           []EgressRule `json:"rules,omitempty" yaml:"rules,omitempty"`
+	AllowedDnsZones []string     `json:"allowedDnsZones,omitempty" yaml:"allowedDnsZones,omitempty"`
 }
 
 // Environment defines a Radix application environment

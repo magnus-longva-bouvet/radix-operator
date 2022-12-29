@@ -63,6 +63,7 @@ type RadixDeploymentSpec struct {
 	Jobs             []RadixDeployJobComponent      `json:"jobs"`
 	Environment      string                         `json:"environment" yaml:"environment"`
 	ImagePullSecrets []core_v1.LocalObjectReference `json:"imagePullSecrets" yaml:"imagePullSecrets"`
+	AllowedDnsZones  []string                       `json:"allowedDnsZones" yaml:"allowedDnsZones"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -97,6 +98,7 @@ type RadixDeployComponent struct {
 	Node                    RadixNode               `json:"node,omitempty" yaml:"node,omitempty"`
 	Authentication          *Authentication         `json:"authentication,omitempty" yaml:"authentication,omitempty"`
 	Identity                *Identity               `json:"identity,omitempty" yaml:"identity,omitempty"`
+	AllowedDnsZones         []string                `json:"allowedDnsZones,omitempty" yaml:"allowedDnsZones,omitempty"`
 }
 
 func (deployComponent *RadixDeployComponent) GetName() string {

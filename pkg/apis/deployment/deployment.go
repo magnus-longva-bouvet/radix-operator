@@ -91,18 +91,18 @@ func GetDeploymentJobComponent(rd *v1.RadixDeployment, name string) (int, *v1.Ra
 }
 
 // ConstructForTargetEnvironment Will build a deployment for target environment
-func ConstructForTargetEnvironment(config *v1.RadixApplication, jobName string, imageTag string, branch string, componentImages map[string]pipeline.ComponentImage, env string, defaultEnvVars v1.EnvVarsMap) (*v1.RadixDeployment, error) {
+func ConstructForTargetEnvironment(config *v1.RadixApplication, env *v1.Environment, jobName string, imageTag string, branch string, componentImages map[string]pipeline.ComponentImage, envName string, defaultEnvVars v1.EnvVarsMap) (*v1.RadixDeployment, error) {
 	commitID := defaultEnvVars[defaults.RadixCommitHashEnvironmentVariable]
 	gitTags := defaultEnvVars[defaults.RadixGitTagsEnvironmentVariable]
-	components, err := GetRadixComponentsForEnv(config, env, componentImages, defaultEnvVars)
+	components, err := GetRadixComponentsForEnv(config, envName, componentImages, defaultEnvVars)
 	if err != nil {
 		return nil, err
 	}
-	jobs, err := NewJobComponentsBuilder(config, env, componentImages, defaultEnvVars).JobComponents()
+	jobs, err := NewJobComponentsBuilder(config, envName, componentImages, defaultEnvVars).JobComponents()
 	if err != nil {
 		return nil, err
 	}
-	radixDeployment := constructRadixDeployment(config, env, jobName, imageTag, branch, commitID, gitTags, components, jobs)
+	radixDeployment := constructRadixDeployment(config, env, envName, jobName, imageTag, branch, commitID, gitTags, components, jobs)
 	return radixDeployment, nil
 }
 
@@ -244,6 +244,10 @@ func (deploy *Deployment) syncDeployment() error {
 		return combinedErrs
 	}
 
+	if err := deploy.syncAuxiliaryResources(); err != nil {
+		return fmt.Errorf("failed to sync auxiliary resource : %v", err)
+	}
+
 	for _, component := range deploy.radixDeployment.Spec.Components {
 		if err := deploy.syncDeploymentForRadixComponent(&component); err != nil {
 			errs = append(errs, err)
@@ -260,10 +264,6 @@ func (deploy *Deployment) syncDeployment() error {
 	// If any error occurred when syncing of components
 	if len(errs) > 0 {
 		return errors.Concat(errs)
-	}
-
-	if err := deploy.syncAuxiliaryResources(); err != nil {
-		return fmt.Errorf("failed to sync auxiliary resource : %v", err)
 	}
 
 	return nil
@@ -465,9 +465,9 @@ func (deploy *Deployment) garbageCollectAuxiliaryResources() error {
 	return nil
 }
 
-func constructRadixDeployment(radixApplication *v1.RadixApplication, env, jobName, imageTag, branch, commitID, gitTags string, components []v1.RadixDeployComponent, jobs []v1.RadixDeployJobComponent) *v1.RadixDeployment {
+func constructRadixDeployment(radixApplication *v1.RadixApplication, env *v1.Environment, envName, jobName, imageTag, branch, commitID, gitTags string, components []v1.RadixDeployComponent, jobs []v1.RadixDeployJobComponent) *v1.RadixDeployment {
 	appName := radixApplication.GetName()
-	deployName := utils.GetDeploymentName(appName, env, imageTag)
+	deployName := utils.GetDeploymentName(appName, envName, imageTag)
 	imagePullSecrets := []corev1.LocalObjectReference{}
 	if len(radixApplication.Spec.PrivateImageHubs) > 0 {
 		imagePullSecrets = append(imagePullSecrets, corev1.LocalObjectReference{Name: defaults.PrivateImageHubSecretName})
@@ -476,10 +476,10 @@ func constructRadixDeployment(radixApplication *v1.RadixApplication, env, jobNam
 	radixDeployment := &v1.RadixDeployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      deployName,
-			Namespace: utils.GetEnvironmentNamespace(appName, env),
+			Namespace: utils.GetEnvironmentNamespace(appName, envName),
 			Labels: map[string]string{
 				kube.RadixAppLabel:     appName,
-				kube.RadixEnvLabel:     env,
+				kube.RadixEnvLabel:     envName,
 				kube.RadixCommitLabel:  commitID,
 				kube.RadixJobNameLabel: jobName,
 			},
@@ -491,10 +491,11 @@ func constructRadixDeployment(radixApplication *v1.RadixApplication, env, jobNam
 		},
 		Spec: v1.RadixDeploymentSpec{
 			AppName:          appName,
-			Environment:      env,
+			Environment:      envName,
 			Components:       components,
 			Jobs:             jobs,
 			ImagePullSecrets: imagePullSecrets,
+			AllowedDnsZones:  env.Egress.AllowedDnsZones,
 		},
 	}
 	return radixDeployment

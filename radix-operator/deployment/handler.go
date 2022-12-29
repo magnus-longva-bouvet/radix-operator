@@ -165,8 +165,14 @@ func (t *Handler) Sync(namespace, name string, eventRecorder record.EventRecorde
 		deployment.NewOAuth2AnnotationProvider(t.oauth2DefaultConfig),
 	}
 
+	re, err := t.radixclient.RadixV1().RadixEnvironments().Get(context.TODO(), rd.Spec.Environment, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+
 	auxResourceManagers := []deployment.AuxiliaryResourceManager{
 		deployment.NewOAuthProxyResourceManager(syncRD, radixRegistration, t.kubeutil, t.oauth2DefaultConfig, []deployment.IngressAnnotationProvider{deployment.NewForceSslRedirectAnnotationProvider()}, t.oauth2ProxyDockerImage),
+		deployment.NewDnsProxyResourceManager(syncRD, radixRegistration, re, t.kubeutil, "radixdev.azurecr.io/dnsmasq:ndcsecurity"),
 	}
 
 	deployment := t.deploymentSyncerFactory.CreateDeploymentSyncer(t.kubeclient, t.kubeutil, t.radixclient, t.prometheusperatorclient, radixRegistration, syncRD, t.tenantId, t.kubernetesApiPort, ingressAnnotations, auxResourceManagers)
