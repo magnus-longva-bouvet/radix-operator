@@ -62,7 +62,7 @@ func (o *dnsProxyResourceManager) createOrUpdateDeployment(component v1.RadixCom
 }
 
 func (o *dnsProxyResourceManager) getCurrentAndDesiredDeployment(component v1.RadixCommonDeployComponent) (*appsv1.Deployment, *appsv1.Deployment, error) {
-	deploymentName := utils.GetDeploymentName(component)
+	deploymentName := utils.GetAuxiliaryComponentDeploymentName(component.GetName(), defaults.OAuthProxyAuxiliaryComponentSuffix)
 
 	currentDeployment, err := o.kubeutil.GetDeployment(o.rd.Namespace, deploymentName)
 	if err != nil && !errors.IsNotFound(err) {
@@ -76,7 +76,7 @@ func (o *dnsProxyResourceManager) getCurrentAndDesiredDeployment(component v1.Ra
 	return currentDeployment, desiredDeployment, nil
 }
 
-func (o *oauthProxyResourceManager) getDesiredDeployment(component v1.RadixCommonDeployComponent) (*appsv1.Deployment, error) {
+func (o *dnsProxyResourceManager) getDesiredDeployment(component v1.RadixCommonDeployComponent) (*appsv1.Deployment, error) {
 	deploymentName := utils.GetAuxiliaryComponentDeploymentName(component.GetName(), defaults.OAuthProxyAuxiliaryComponentSuffix)
 	readinessProbe, err := getReadinessProbeWithDefaultsFromEnv(oauthProxyPortNumber)
 	if err != nil {
