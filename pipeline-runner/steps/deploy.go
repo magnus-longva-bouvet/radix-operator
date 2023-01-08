@@ -82,7 +82,7 @@ func (cli *DeployStepImplementation) deployToEnv(appName, envName string, pipeli
 		return fmt.Errorf("failed to retrieve default envName vars for RadixDeployment in app  %s. %v", appName, err)
 	}
 
-	env, err := getRadixEnvironmentByName(pipelineInfo.RadixApplication, envName)
+	env, err := utils.GetRadixEnvironmentByName(pipelineInfo.RadixApplication, envName)
 	if err != nil {
 		return err
 	}
@@ -113,15 +113,6 @@ func (cli *DeployStepImplementation) deployToEnv(appName, envName string, pipeli
 	}
 
 	return nil
-}
-
-func getRadixEnvironmentByName(application *v1.RadixApplication, envName string) (*v1.Environment, error) {
-	for _, env := range application.Spec.Environments {
-		if env.Name == envName {
-			return &env, nil
-		}
-	}
-	return nil, fmt.Errorf("could not find environment %s in RadixApplication", envName)
 }
 
 func getDefaultEnvVars(pipelineInfo *model.PipelineInfo) (v1.EnvVarsMap, error) {

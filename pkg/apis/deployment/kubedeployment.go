@@ -230,7 +230,22 @@ func (deploy *Deployment) setDesiredDeploymentProperties(deployComponent v1.Radi
 	desiredDeployment.Spec.Template.Spec.Affinity = utils.GetPodSpecAffinity(deployComponent.GetNode(), appName, componentName)
 	desiredDeployment.Spec.Template.Spec.Tolerations = utils.GetPodSpecTolerations(deployComponent.GetNode())
 
+	if allowedDnsZones := deployComponent.GetAllowedDnsZones(); allowedDnsZones != nil {
+		dnsProxyServiceIp, err := deploy.getDnsProxyServiceIp()
+		if err != nil {
+			return err
+		}
+		desiredDeployment.Spec.Template.Spec.DNSPolicy = corev1.DNSNone
+		desiredDeployment.Spec.Template.Spec.DNSConfig = getDnsConfig(dnsProxyServiceIp)
+	}
+
 	return nil
+}
+
+func getDnsConfig(dnsProxyServiceIp string) *corev1.PodDNSConfig {
+	return &corev1.PodDNSConfig{
+		Nameservers: []string{dnsProxyServiceIp},
+	}
 }
 
 func (deploy *Deployment) getRadixBranchAndCommitId() (string, string) {

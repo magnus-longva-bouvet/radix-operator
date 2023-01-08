@@ -461,7 +461,8 @@ func (o *oauthProxyResourceManager) getOwnerReferenceOfIngress(ingress *networki
 
 func (o *oauthProxyResourceManager) createOrUpdateService(component v1.RadixCommonDeployComponent) error {
 	service := o.buildServiceSpec(component)
-	return o.kubeutil.ApplyService(o.rd.Namespace, service)
+	_, err := o.kubeutil.ApplyService(o.rd.Namespace, service)
+	return err
 }
 
 func (o *oauthProxyResourceManager) createOrUpdateSecret(component v1.RadixCommonDeployComponent) error {

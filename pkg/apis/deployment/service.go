@@ -13,7 +13,8 @@ import (
 func (deploy *Deployment) createOrUpdateService(deployComponent v1.RadixCommonDeployComponent) error {
 	namespace := deploy.radixDeployment.Namespace
 	service := getServiceConfig(deployComponent, deploy.radixDeployment, deployComponent.GetPorts())
-	return deploy.kubeutil.ApplyService(namespace, service)
+	_, err := deploy.kubeutil.ApplyService(namespace, service)
+	return err
 }
 
 func (deploy *Deployment) garbageCollectServicesNoLongerInSpec() error {

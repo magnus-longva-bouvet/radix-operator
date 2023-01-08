@@ -124,8 +124,8 @@ func Test_Controller_Calls_Handler(t *testing.T) {
 		})
 
 	for _, aservice := range services.Items {
-		client.CoreV1().Services(rd.ObjectMeta.Namespace).Delete(context.TODO(), aservice.Name, metav1.DeleteOptions{})
 
+		client.CoreV1().Services(rd.ObjectMeta.Namespace).Delete(context.TODO(), aservice.Name, metav1.DeleteOptions{})
 		op, ok = <-synced
 		assert.True(t, ok)
 		assert.True(t, op)

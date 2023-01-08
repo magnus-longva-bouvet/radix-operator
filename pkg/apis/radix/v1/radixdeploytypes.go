@@ -205,6 +205,10 @@ func (deployComponent *RadixDeployComponent) SetEnvironmentVariables(envVars Env
 	deployComponent.EnvironmentVariables = envVars
 }
 
+func (deployComponent *RadixDeployComponent) GetAllowedDnsZones() []string {
+	return deployComponent.AllowedDnsZones
+}
+
 func (deployJobComponent *RadixDeployJobComponent) GetName() string {
 	return deployJobComponent.Name
 }
@@ -314,6 +318,10 @@ func (deployJobComponent *RadixDeployJobComponent) SetEnvironmentVariables(envVa
 	deployJobComponent.EnvironmentVariables = envVars
 }
 
+func (deployJobComponent *RadixDeployJobComponent) GetAllowedDnsZones() []string {
+	return deployJobComponent.AllowedDnsZones
+}
+
 // GetNrOfReplicas gets number of replicas component will run
 func (deployComponent RadixDeployComponent) GetNrOfReplicas() int32 {
 	replicas := int32(1)
@@ -345,6 +353,7 @@ type RadixDeployJobComponent struct {
 	Node                    RadixNode                 `json:"node,omitempty" yaml:"node,omitempty"`
 	TimeLimitSeconds        *int64                    `json:"timeLimitSeconds,omitempty" yaml:"timeLimitSeconds,omitempty"`
 	Identity                *Identity                 `json:"identity,omitempty" yaml:"identity,omitempty"`
+	AllowedDnsZones         []string                  `json:"allowedDnsZones,omitempty" yaml:"allowedDnsZones,omitempty"`
 }
 
 type RadixComponentType string
@@ -382,6 +391,7 @@ type RadixCommonDeployComponent interface {
 	SetVolumeMounts(mounts []RadixVolumeMount)
 	GetTimeLimitSeconds() *int64
 	GetIdentity() *Identity
+	GetAllowedDnsZones() []string
 }
 
 // RadixCommonDeployComponentFactory defines a common component factory

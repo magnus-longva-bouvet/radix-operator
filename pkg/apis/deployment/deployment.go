@@ -237,15 +237,15 @@ func (deploy *Deployment) syncDeployment() error {
 
 	errs := deploy.setDefaultNetworkPolicies()
 
+	if err := deploy.syncAuxiliaryResources(); err != nil {
+		return fmt.Errorf("failed to sync auxiliary resource : %v", err)
+	}
+
 	// If any error occurred when setting network policies
 	if len(errs) > 0 {
 		combinedErrs := errors.Concat(errs)
 		log.Errorf("%s", combinedErrs)
 		return combinedErrs
-	}
-
-	if err := deploy.syncAuxiliaryResources(); err != nil {
-		return fmt.Errorf("failed to sync auxiliary resource : %v", err)
 	}
 
 	for _, component := range deploy.radixDeployment.Spec.Components {
@@ -616,4 +616,13 @@ func (deploy *Deployment) syncDeploymentForRadixComponent(component v1.RadixComm
 	}
 
 	return nil
+}
+
+func (deploy *Deployment) getDnsProxyServiceIp() (string, error) {
+	serviceName := utils.GetAuxiliaryComponentServiceName(deploy.registration.GetName(), defaults.DnsProxyAuxiliaryComponentSuffix)
+	dnsProxyService, err := deploy.kubeutil.GetService(deploy.getNamespace(), serviceName)
+	if err != nil {
+		return "", err
+	}
+	return dnsProxyService.Spec.ClusterIP, nil
 }

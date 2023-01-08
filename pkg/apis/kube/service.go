@@ -16,18 +16,18 @@ import (
 )
 
 // ApplyService Will create or update service in provided namespace
-func (kubeutil *Kube) ApplyService(namespace string, service *corev1.Service) error {
-	oldService, err := kubeutil.getService(namespace, service.GetName())
+func (kubeutil *Kube) ApplyService(namespace string, service *corev1.Service) (*corev1.Service, error) {
+	oldService, err := kubeutil.GetService(namespace, service.GetName())
 	if err != nil && errors.IsNotFound(err) {
-		_, err := kubeutil.kubeClient.CoreV1().Services(namespace).Create(context.TODO(), service, metav1.CreateOptions{})
+		createdService, err := kubeutil.kubeClient.CoreV1().Services(namespace).Create(context.TODO(), service, metav1.CreateOptions{})
 
 		if err != nil {
-			return fmt.Errorf("failed to create service object: %v", err)
+			return nil, fmt.Errorf("failed to create service object: %v", err)
 		}
 
-		return nil
+		return createdService, nil
 	} else if err != nil {
-		return fmt.Errorf("failed to get service object: %v", err)
+		return nil, fmt.Errorf("failed to get service object: %v", err)
 	}
 
 	log.Debugf("Service object %s already exists in namespace %s, updating the object now", service.GetName(), namespace)
@@ -39,30 +39,29 @@ func (kubeutil *Kube) ApplyService(namespace string, service *corev1.Service) er
 
 	oldServiceJSON, err := json.Marshal(oldService)
 	if err != nil {
-		return fmt.Errorf("failed to marshal old Service object: %v", err)
+		return nil, fmt.Errorf("failed to marshal old Service object: %v", err)
 	}
 
 	newServiceJSON, err := json.Marshal(newService)
 	if err != nil {
-		return fmt.Errorf("failed to marshal new Service object: %v", err)
+		return nil, fmt.Errorf("failed to marshal new Service object: %v", err)
 	}
 
 	patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldServiceJSON, newServiceJSON, corev1.Service{})
 	if err != nil {
-		return fmt.Errorf("failed to create two way merge patch Service objects: %v", err)
+		return nil, fmt.Errorf("failed to create two way merge patch Service objects: %v", err)
 	}
 
 	if !IsEmptyPatch(patchBytes) {
 		patchedService, err := kubeutil.kubeClient.CoreV1().Services(namespace).Patch(context.TODO(), service.GetName(), types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 		if err != nil {
-			return fmt.Errorf("failed to patch Service object: %v", err)
+			return nil, fmt.Errorf("failed to patch Service object: %v", err)
 		}
 		log.Debugf("Patched Service: %s in namespace %s", patchedService.Name, namespace)
-	} else {
-		log.Debugf("No need to patch service: %s ", service.GetName())
+		return patchedService, nil
 	}
-
-	return nil
+	log.Debugf("No need to patch service: %s ", service.GetName())
+	return oldService, nil
 }
 
 // ListServices Lists services from cache or from cluster
@@ -97,7 +96,7 @@ func (kubeutil *Kube) ListServicesWithSelector(namespace, labelSelectorString st
 }
 
 // GetService Get service from cache or from cluster
-func (kubeutil *Kube) getService(namespace, name string) (*corev1.Service, error) {
+func (kubeutil *Kube) GetService(namespace, name string) (*corev1.Service, error) {
 	var service *corev1.Service
 	var err error
 
