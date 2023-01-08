@@ -1,4 +1,4 @@
-module github.com/equinor/radix-operator
+module github.com/magnus-longva-bouvet/radix-operator
 
 go 1.18
 
