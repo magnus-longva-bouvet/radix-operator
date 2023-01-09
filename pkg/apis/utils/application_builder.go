@@ -14,6 +14,7 @@ type ApplicationBuilder interface {
 	WithBuildKit(*bool) ApplicationBuilder
 	WithEnvironment(string, string) ApplicationBuilder
 	WithEnvironmentNoBranch(string) ApplicationBuilder
+	WithEnvironmentWithAllowedDnsZones(string, string, []string) ApplicationBuilder
 	WithComponent(RadixApplicationComponentBuilder) ApplicationBuilder
 	WithComponents(...RadixApplicationComponentBuilder) ApplicationBuilder
 	WithJobComponent(RadixApplicationJobComponentBuilder) ApplicationBuilder
@@ -95,6 +96,21 @@ func (ap *ApplicationBuilderStruct) WithEnvironment(environment, buildFrom strin
 func (ap *ApplicationBuilderStruct) WithEnvironmentNoBranch(environment string) ApplicationBuilder {
 	ap.environments = append(ap.environments, v1.Environment{
 		Name: environment,
+	})
+
+	return ap
+}
+
+// WithEnvironmentWithAllowedDnsZones Appends environment with allowed DNS zones
+func (ap *ApplicationBuilderStruct) WithEnvironmentWithAllowedDnsZones(environment, buildFrom string, allowedDnsZones []string) ApplicationBuilder {
+	ap.environments = append(ap.environments, v1.Environment{
+		Name: environment,
+		Build: v1.EnvBuild{
+			From: buildFrom,
+		},
+		Egress: v1.EgressConfig{
+			AllowedDnsZones: allowedDnsZones,
+		},
 	})
 
 	return ap

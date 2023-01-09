@@ -3,10 +3,10 @@ package job
 import (
 	"context"
 	"fmt"
-	"os"
-
 	"github.com/equinor/radix-operator/pkg/apis/securitycontext"
 	"github.com/equinor/radix-operator/pkg/apis/utils/git"
+	"os"
+	"strings"
 
 	"github.com/equinor/radix-operator/pkg/apis/defaults"
 	"github.com/equinor/radix-operator/pkg/apis/kube"
@@ -87,6 +87,12 @@ func (job *Job) getPipelineJobConfig() (*batchv1.Job, error) {
 							Image:           imageTag,
 							ImagePullPolicy: corev1.PullAlways,
 							Args:            containerArguments,
+							Env: []corev1.EnvVar{
+								{
+									Name:  defaults.LogLevel,
+									Value: strings.ToUpper(log.GetLevel().String()),
+								},
+							},
 							SecurityContext: securitycontext.Container(
 								securitycontext.WithContainerDropAllCapabilities(),
 								securitycontext.WithContainerSeccompProfile(corev1.SeccompProfileTypeRuntimeDefault),

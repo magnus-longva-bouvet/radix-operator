@@ -19,9 +19,14 @@ import (
 
 const (
 	// dnsmasqConfKey is the key inside the configMap which holds the data for the /etc/dnsmasq.conf file
-	dnsmasqConfKey           = "dnsmasqConf"
-	dnsProxyPortName         = "dns"
-	dnsProxyPortNumber int32 = 53
+	dnsmasqConfKey                  = "dnsmasqConf"
+	dnsProxyPortName                = "dns"
+	dnsProxyPortTcpName             = "dns-tcp"
+	dnsProxyPortUdpName             = "dns-udp"
+	dnsProxyPortNumber        int32 = 53
+	dnsmasqInternalPortNumber       = 1053
+	confFileMountPath               = "/mnt"
+	confFileName                    = "dnsmasq.conf"
 )
 
 // NewDnsProxyResourceManager creates a new NewDnsProxyResourceManager
@@ -58,11 +63,14 @@ func (o *dnsProxyResourceManager) Sync() error {
 	if err := o.createOrUpdateConfigMap(kubeDnsIp, allowedDnsZones); err != nil {
 		return err
 	}
-	return o.createOrUpdateDeployment(allowedDnsZones)
+	for _, component := range o.rd.Spec.Components {
+		component.AllowedDnsZones = allowedDnsZones
+	}
+	return o.createOrUpdateDeployment()
 }
 
-func (o *dnsProxyResourceManager) createOrUpdateDeployment(allowedDnsZones []string) error {
-	current, desired, err := o.getCurrentAndDesiredDeployment(allowedDnsZones)
+func (o *dnsProxyResourceManager) createOrUpdateDeployment() error {
+	current, desired, err := o.getCurrentAndDesiredDeployment()
 	if err != nil {
 		return err
 	}
@@ -73,14 +81,14 @@ func (o *dnsProxyResourceManager) createOrUpdateDeployment(allowedDnsZones []str
 	return nil
 }
 
-func (o *dnsProxyResourceManager) getCurrentAndDesiredDeployment(allowedDnsZones []string) (*appsv1.Deployment, *appsv1.Deployment, error) {
-	deploymentName := utils.GetAuxiliaryComponentDeploymentName(o.rd.Spec.AppName, defaults.OAuthProxyAuxiliaryComponentSuffix)
+func (o *dnsProxyResourceManager) getCurrentAndDesiredDeployment() (*appsv1.Deployment, *appsv1.Deployment, error) {
+	deploymentName := utils.GetAuxiliaryComponentDeploymentName(o.rd.Spec.AppName, defaults.DnsProxyAuxiliaryComponentSuffix)
 
 	currentDeployment, err := o.kubeutil.GetDeployment(o.rd.Namespace, deploymentName)
 	if err != nil && !errors.IsNotFound(err) {
 		return nil, nil, err
 	}
-	desiredDeployment, err := o.getDesiredDeployment(allowedDnsZones)
+	desiredDeployment, err := o.getDesiredDeployment()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -88,9 +96,9 @@ func (o *dnsProxyResourceManager) getCurrentAndDesiredDeployment(allowedDnsZones
 	return currentDeployment, desiredDeployment, nil
 }
 
-func (o *dnsProxyResourceManager) getDesiredDeployment(allowedDnsZones []string) (*appsv1.Deployment, error) {
-	deploymentName := utils.GetAuxiliaryComponentDeploymentName(o.rd.Spec.AppName, defaults.OAuthProxyAuxiliaryComponentSuffix)
-	readinessProbe, err := getReadinessProbeWithDefaultsFromEnv(oauthProxyPortNumber)
+func (o *dnsProxyResourceManager) getDesiredDeployment() (*appsv1.Deployment, error) {
+	deploymentName := utils.GetAuxiliaryComponentDeploymentName(o.rd.Spec.AppName, defaults.DnsProxyAuxiliaryComponentSuffix)
+	readinessProbe, err := getReadinessProbeWithDefaultsFromEnv(dnsmasqInternalPortNumber)
 	if err != nil {
 		return nil, err
 	}
@@ -120,35 +128,38 @@ func (o *dnsProxyResourceManager) getDesiredDeployment(allowedDnsZones []string)
 							Name:            o.rd.Spec.AppName,
 							Image:           o.dnsProxyContainerImage,
 							ImagePullPolicy: corev1.PullAlways,
-							// Env:             o.getEnvVars(component),
+							Args: []string{
+								fmt.Sprintf("--conf-file=%s/%s", confFileMountPath, confFileName),
+								"-k",
+								"--log-queries",
+								"--log-debug",
+								"--log-facility=-",
+							},
 							Ports: []corev1.ContainerPort{
 								{
 									Name:          dnsProxyPortName,
-									ContainerPort: dnsProxyPortNumber,
+									ContainerPort: dnsmasqInternalPortNumber,
 								},
 							},
 							ReadinessProbe: readinessProbe,
 							VolumeMounts: []corev1.VolumeMount{{
-								Name:             "",
-								ReadOnly:         false,
-								MountPath:        "",
-								SubPath:          "",
-								MountPropagation: nil,
-								SubPathExpr:      "",
+								Name:      getDnsProxyVolumeName(o.rd.Spec.AppName),
+								MountPath: confFileMountPath,
+								ReadOnly:  true,
 							}},
 						},
 					},
 					Volumes: []corev1.Volume{{
-						Name: "",
+						Name: getDnsProxyVolumeName(o.rd.Spec.AppName),
 						VolumeSource: corev1.VolumeSource{
 							ConfigMap: &corev1.ConfigMapVolumeSource{
 								LocalObjectReference: corev1.LocalObjectReference{
-									Name: "",
+									Name: getDnsProxyConfigMapName(o.rd.Spec.AppName),
 								},
 								Items: []corev1.KeyToPath{{
 									Key:  dnsmasqConfKey,
-									Path: "/etc/dnsmasq.conf",
-									Mode: int32Ptr(644),
+									Path: confFileName,
+									Mode: int32Ptr(0644),
 								}},
 								Optional: utils.BoolPtr(false),
 							},
@@ -166,6 +177,10 @@ func (o *dnsProxyResourceManager) getDesiredDeployment(allowedDnsZones []string)
 
 	o.mergeAuxComponentResourceLabels(desiredDeployment)
 	return desiredDeployment, nil
+}
+
+func getDnsProxyVolumeName(appName string) string {
+	return fmt.Sprintf("%s-%s-config", appName, defaults.DnsProxyAuxiliaryComponentSuffix)
 }
 
 func (o *dnsProxyResourceManager) createOrUpdateService() (*corev1.Service, error) {
@@ -208,13 +223,15 @@ func (o *dnsProxyResourceManager) buildServiceSpec() *corev1.Service {
 			Selector: o.getLabelsForAuxComponent(),
 			Ports: []corev1.ServicePort{
 				{
+					Name:       dnsProxyPortTcpName,
 					Port:       dnsProxyPortNumber,
-					TargetPort: intstr.FromInt(int(dnsProxyPortNumber)),
+					TargetPort: intstr.FromInt(dnsmasqInternalPortNumber),
 					Protocol:   corev1.ProtocolTCP,
 				},
 				{
+					Name:       dnsProxyPortUdpName,
 					Port:       dnsProxyPortNumber,
-					TargetPort: intstr.FromInt(int(dnsProxyPortNumber)),
+					TargetPort: intstr.FromInt(dnsmasqInternalPortNumber),
 					Protocol:   corev1.ProtocolUDP,
 				},
 			},
@@ -357,7 +374,7 @@ func (o *dnsProxyResourceManager) garbageCollectConfigMap() error {
 }
 
 func createDnsMasqConfFile(kubeDnsIp string, allowedDnsZones []string) string {
-	lines := []string{"address=\"/#/\"", "conf-dir=/etc/dnsmasq.d/,*.conf", "bogus-priv", "no-hosts", "no-resolv"}
+	lines := []string{"address=\"/#/\"", "conf-dir=/etc/dnsmasq.d/,*.conf", "bogus-priv", "no-hosts", "no-resolv", fmt.Sprintf("port=%d", dnsmasqInternalPortNumber)}
 	for _, allowedDnsZone := range allowedDnsZones {
 		lines = append(lines, fmt.Sprintf("server=/%s/%s", allowedDnsZone, kubeDnsIp))
 	}

@@ -578,6 +578,31 @@ func Test_UseBuildKit(t *testing.T) {
 	}
 }
 
+func Test_WithDnsRules(t *testing.T) {
+	var testScenarios = []struct {
+		appName                 string
+		allowedDnsZones         []string
+		expectedAllowedDnsZones []string
+	}{
+		{
+			appName:                 "any-app1",
+			allowedDnsZones:         []string{"vg.no"},
+			expectedAllowedDnsZones: []string{"vg.no"},
+		},
+	}
+	tu, client, kubeUtil, radixclient := setupTest()
+	envName := "custom-env"
+	for _, testScenario := range testScenarios {
+		allowedDnsZones := []string{"vg.no"}
+		ra := utils.ARadixApplication().WithAppName(testScenario.appName).WithEnvironmentWithAllowedDnsZones(envName, "anyBranch", allowedDnsZones)
+		applyApplicationWithSync(tu, client, kubeUtil, radixclient, ra)
+		raAfterSync, _ := radixclient.RadixV1().RadixApplications(utils.GetAppNamespace(testScenario.appName)).Get(context.TODO(), testScenario.appName, metav1.GetOptions{})
+		envObj, err := utils.GetRadixEnvironmentByName(raAfterSync, envName)
+		assert.NoError(t, err)
+		assert.Equal(t, testScenario.allowedDnsZones, envObj.Egress.AllowedDnsZones)
+	}
+}
+
 func Test_GetConfigBranch_notSet(t *testing.T) {
 	rr := utils.NewRegistrationBuilder().
 		BuildRR()
